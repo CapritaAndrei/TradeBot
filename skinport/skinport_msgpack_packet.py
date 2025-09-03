@@ -1,9 +1,25 @@
 import struct
-
 import msgpack
-from msgpack import Timestamp, ExtType
 from socketio.msgpack_packet import MsgPackPacket
 
+# Definim clasele lipsă dacă nu există în msgpack
+try:
+    from msgpack import Timestamp, ExtType
+except ImportError:
+    # Implementare minimală a claselor lipsă
+    class ExtType:
+        def __init__(self, code, data):
+            self.code = code
+            self.data = data
+
+    class Timestamp:
+        @staticmethod
+        def from_unix(unix_time):
+            return unix_time
+            
+        @staticmethod
+        def to_unix():
+            return 0
 
 class SkinportMsgPackPacket(MsgPackPacket):
 
@@ -27,15 +43,23 @@ class SkinportMsgPackPacket(MsgPackPacket):
     @staticmethod
     def _decode_timestamp_from_ext(code, data):
         milliseconds = struct.unpack("!Q", data)[0]
-        return Timestamp.from_unix(milliseconds / 1000)
+        try:
+            return Timestamp.from_unix(milliseconds / 1000)
+        except AttributeError:
+            # Returnăm direct timestamp-ul ca float dacă clasa nu există
+            return milliseconds / 1000
 
     def _default(self, obj):
-        if isinstance(obj, Timestamp):
+        if hasattr(obj, '__class__') and obj.__class__.__name__ == 'Timestamp':
             return self._encode_timestamp_to_ext(obj)
         return obj
 
     @staticmethod
     def _encode_timestamp_to_ext(obj):
-        milliseconds = int(obj.to_unix() * 1000)
+        try:
+            milliseconds = int(obj.to_unix() * 1000)
+        except AttributeError:
+            # Presupunem că obiectul este deja un unix timestamp
+            milliseconds = int(obj * 1000)
         return ExtType(0, struct.pack("!Q", milliseconds))
 
